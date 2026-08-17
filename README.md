@@ -49,3 +49,25 @@
 - API接口文档
 - 数据库设计
 - AI开发上下文
+## 接口测试
+
+Swagger接口测试：
+<img width="1243" height="129" alt="image" src="https://github.com/user-attachments/assets/a3955785-06aa-4bf1-91d1-afc9b02ed319" />
+
+## 项目启动
+
+环境要求：
+
+- JDK 17
+- Maven 3.9+
+- MySQL 8
+- Redis
+
+启动：
+
+1. 创建数据库
+2. 执行 docs/sql 下脚本
+3. 配置数据库连接
+4. 启动 SkinCareApplication
+
+
