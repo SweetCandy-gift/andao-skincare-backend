@@ -10,7 +10,7 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
-      timeout: 3s
+      timeout: ${REDIS_TIMEOUT:3s}
 
 logging:
   level:

@@ -62,6 +62,8 @@ $env:MYSQL_USERNAME = "root"
 $env:MYSQL_PASSWORD = "你的MySQL密码"
 ```
 
+设置后可在同一个 PowerShell 会话中运行 `mvn spring-boot:run`。密码只保存在当前进程的环境变量中，不会写入 Git；关闭终端后需要重新设置。
+
 使用非默认数据库时：
 
 ```powershell
@@ -86,7 +88,7 @@ cart:user:{userId}
 | Port | `6379` | `REDIS_PORT` |
 | Password | 空 | `REDIS_PASSWORD` |
 | Database | `0` | `REDIS_DATABASE` |
-| Timeout | `3s` | 暂无独立环境变量 |
+| Timeout | `3s` | `REDIS_TIMEOUT` |
 
 有密码时可在启动终端中设置：
 
@@ -95,6 +97,7 @@ $env:REDIS_HOST = "localhost"
 $env:REDIS_PORT = "6379"
 $env:REDIS_PASSWORD = "你的Redis密码"
 $env:REDIS_DATABASE = "0"
+$env:REDIS_TIMEOUT = "3s"
 ```
 
 当前环境未检测到 `redis-cli`，并且本机 `6379` 端口不可连接。使用购物车和创建订单接口前，必须先安装并启动 Redis，或者把环境变量指向可用的 Redis 服务。
@@ -173,6 +176,41 @@ mvn spring-boot:run
 ```
 
 默认启用 `dev` Profile，服务端口为 `8080`。
+
+### 开发环境变量清单
+
+`application-dev.yml` 不保存真实凭据。未设置环境变量时，应用使用适合本机开发的默认地址和空密码；本机服务使用密码时，必须在启动前设置相应变量。
+
+| 环境变量 | 是否必填 | 开发环境默认值 | 用途 |
+| --- | --- | --- | --- |
+| `MYSQL_URL` | 否 | 本机 `andao_skincare` 数据库 | JDBC 连接地址 |
+| `MYSQL_USERNAME` | 否 | `root` | MySQL 用户名 |
+| `MYSQL_PASSWORD` | 否 | 空 | MySQL 密码 |
+| `REDIS_HOST` | 否 | `localhost` | Redis 地址 |
+| `REDIS_PORT` | 否 | `6379` | Redis 端口 |
+| `REDIS_PASSWORD` | 否 | 空 | Redis 密码 |
+| `REDIS_DATABASE` | 否 | `0` | Redis 数据库编号 |
+| `REDIS_TIMEOUT` | 否 | `3s` | Redis 连接超时 |
+| `SERVER_PORT` | 否 | `8080` | HTTP 服务端口 |
+| `TEST_USER_ID` | 否 | `1` | 购物车和订单使用的测试用户 ID |
+
+PowerShell 完整示例：
+
+```powershell
+$env:MYSQL_URL = "jdbc:mysql://localhost:3306/andao_skincare?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+$env:MYSQL_USERNAME = "root"
+$env:MYSQL_PASSWORD = "你的MySQL密码"
+$env:REDIS_HOST = "localhost"
+$env:REDIS_PORT = "6379"
+$env:REDIS_PASSWORD = ""
+$env:REDIS_DATABASE = "0"
+$env:REDIS_TIMEOUT = "3s"
+$env:SERVER_PORT = "8080"
+$env:TEST_USER_ID = "1"
+mvn spring-boot:run
+```
+
+在 IntelliJ IDEA 中运行时，可在 Run/Debug Configuration 的 Environment variables 中填写同名变量。Spring Boot 不会自动读取仓库根目录的 `.env` 文件；如果自行使用 `.env` 管理本地变量，该文件已被 `.gitignore` 忽略，仍需通过终端或 IDE 将变量注入应用进程。
 
 也可以先打包再启动：
 
