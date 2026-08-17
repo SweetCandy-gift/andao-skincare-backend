@@ -137,3 +137,66 @@ HSET cart:user:1 1950000000000000201 1
 - 下架、删除或分类不可用的商品仍保留在 Redis 中，查询时标记为不可用，用户可以将其删除。
 - 当前购物车不设置过期时间。
 - 删除某个商品使用 `HDEL`；购物车全部商品删除后，Redis 会自动移除空 Hash Key。
+
+## order
+
+用途：保存订单归属、金额、商品总数和订单状态。`order` 是 MySQL 关键字，SQL 和 MyBatis-Plus 映射中必须使用反引号引用。
+
+对应脚本：`docs/sql/order.sql`。
+
+| 字段 | 类型 | 允许为空 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `BIGINT` | 否 | 无 | 订单 ID，由 MyBatis-Plus 生成雪花 ID |
+| `order_no` | `VARCHAR(40)` | 否 | 无 | 对外订单编号 |
+| `user_id` | `BIGINT` | 否 | 无 | 下单用户 ID |
+| `total_amount` | `DECIMAL(12,2)` | 否 | 无 | 订单总金额 |
+| `total_quantity` | `INT` | 否 | 无 | 商品总数量 |
+| `status` | `TINYINT` | 否 | `0` | 订单状态：`0` 已创建 |
+| `remark` | `VARCHAR(200)` | 是 | `NULL` | 订单备注 |
+| `deleted` | `TINYINT` | 否 | `0` | 逻辑删除：`0` 未删除，`1` 已删除 |
+| `created_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 创建时间 |
+| `updated_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 更新时间，数据更新时自动刷新 |
+
+### 索引
+
+| 索引名 | 类型 | 字段 | 作用 |
+| --- | --- | --- | --- |
+| `PRIMARY` | 主键 | `id` | 唯一标识订单 |
+| `uk_order_order_no` | 唯一索引 | `order_no` | 保证订单编号唯一 |
+| `idx_order_user_status_created` | 普通索引 | `user_id, status, created_at` | 支持用户订单查询 |
+
+## order_item
+
+用途：保存订单商品明细以及下单时的商品信息快照。
+
+对应脚本：`docs/sql/order.sql`。
+
+| 字段 | 类型 | 允许为空 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `BIGINT` | 否 | 无 | 明细 ID，由 MyBatis-Plus 生成雪花 ID |
+| `order_id` | `BIGINT` | 否 | 无 | 所属订单 ID |
+| `product_id` | `BIGINT` | 否 | 无 | 商品 ID |
+| `product_name` | `VARCHAR(100)` | 否 | 无 | 下单时商品名称快照 |
+| `cover_url` | `VARCHAR(500)` | 是 | `NULL` | 下单时商品封面快照 |
+| `product_price` | `DECIMAL(10,2)` | 否 | 无 | 下单时商品单价 |
+| `quantity` | `INT` | 否 | 无 | 购买数量 |
+| `subtotal` | `DECIMAL(12,2)` | 否 | 无 | 明细小计 |
+| `created_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 创建时间 |
+
+### 索引
+
+| 索引名 | 类型 | 字段 | 作用 |
+| --- | --- | --- | --- |
+| `PRIMARY` | 主键 | `id` | 唯一标识订单明细 |
+| `idx_order_item_order_id` | 普通索引 | `order_id` | 支持查询订单的全部明细 |
+| `idx_order_item_product_id` | 普通索引 | `product_id` | 支持按商品追溯订单明细 |
+
+### 订单数据规则
+
+- 订单主表与全部明细必须在同一个 MySQL 本地事务中写入。
+- 商品名称、封面、单价和小计采用下单时快照，后续商品变化不会修改历史订单。
+- 当前只定义“已创建”状态，不包含支付、取消、发货或完成状态流转。
+- 当前下单只校验库存，不执行库存扣减或库存预占。
+- `order_id`、`product_id` 和 `user_id` 均为逻辑关联，当前不设置物理外键。
+
+目前共有 `sys_user`、`product_category`、`product`、`order`、`order_item` 五张业务表。

@@ -14,4 +14,6 @@ public interface CartService {
     CartItemVO update(CartUpdateDTO request);
 
     void remove(Long productId);
+
+    void clear();
 }

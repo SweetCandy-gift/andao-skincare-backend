@@ -97,6 +97,11 @@ public class CartServiceImpl implements CartService {
         redisTemplate.opsForHash().delete(currentCartKey(), productId.toString());
     }
 
+    @Override
+    public void clear() {
+        redisTemplate.delete(currentCartKey());
+    }
+
     private CartItemVO toCartItemVO(CartItem item) {
         try {
             return toAvailableVO(item, productService.getById(item.productId()));
