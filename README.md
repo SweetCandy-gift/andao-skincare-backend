@@ -52,7 +52,8 @@
 ## 接口测试
 
 Swagger接口测试：
-<img width="1243" height="129" alt="image" src="https://github.com/user-attachments/assets/a3955785-06aa-4bf1-91d1-afc9b02ed319" />
+![swagger](https://github.com/user-attachments/assets/4bf1a72a-771b-4baf-8427-a4e74c790bce)
+
 
 ## 项目启动
 
