@@ -5,7 +5,7 @@
 ## 项目概况
 
 - 项目名称：安稻护肤 AI 社区商城平台。
-- 项目性质：求职展示用 Java 后端 Demo。
+- 项目性质：面向零售场景的后端服务系统，实现用户管理、商品浏览、购物车、订单创建等核心业务流程。
 - 根包名：`com.andao.skincare`。
 - 架构：Maven 单模块、Spring Boot 单体应用。
 - 代码组织：公共能力放在 `common`，业务代码放在 `module/<业务域>`；每个业务域内部使用 Controller、Service、Mapper、Entity、DTO、VO 分层。
