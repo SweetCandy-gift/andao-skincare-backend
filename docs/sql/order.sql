@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS `order` (
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
     `total_amount` DECIMAL(12, 2) NOT NULL COMMENT '订单总金额',
     `total_quantity` INT NOT NULL COMMENT '商品总数量',
-    `status` TINYINT NOT NULL DEFAULT 0 COMMENT '订单状态：0-已创建',
+    `status` TINYINT NOT NULL DEFAULT 0 COMMENT '订单状态：0-已创建，1-已支付，2-已发货，3-已完成，4-已取消',
     `remark` VARCHAR(200) DEFAULT NULL COMMENT '订单备注',
     `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除，1-已删除',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

@@ -6,12 +6,15 @@ import com.andao.skincare.module.cart.vo.CartVO;
 import com.andao.skincare.module.order.dto.OrderCreateDTO;
 import com.andao.skincare.module.order.entity.Order;
 import com.andao.skincare.module.order.entity.OrderItem;
+import com.andao.skincare.module.order.entity.OrderStatus;
 import com.andao.skincare.module.order.mapper.OrderItemMapper;
 import com.andao.skincare.module.order.mapper.OrderMapper;
 import com.andao.skincare.module.order.service.OrderService;
 import com.andao.skincare.module.order.vo.OrderItemVO;
 import com.andao.skincare.module.order.vo.OrderVO;
 import com.andao.skincare.module.user.service.CurrentUserProvider;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -25,13 +28,14 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class OrderServiceImpl implements OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
-    private static final int ORDER_STATUS_CREATED = 0;
     private static final DateTimeFormatter ORDER_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
 
@@ -50,6 +54,10 @@ public class OrderServiceImpl implements OrderService {
         this.currentUserProvider = currentUserProvider;
     }
 
+    /**
+     * 从当前用户购物车创建订单。订单主表和全部明细必须作为一个整体成功或失败，
+     * rollbackFor 确保任意保存异常都会回滚 MySQL 数据，避免出现无明细订单或残缺订单。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderVO create(OrderCreateDTO request) {
@@ -75,6 +83,63 @@ public class OrderServiceImpl implements OrderService {
         return toVO(order, orderItems);
     }
 
+    @Override
+    public List<OrderVO> list() {
+        Long userId = currentUserProvider.getCurrentUserId();
+        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getUserId, userId)
+                .orderByDesc(Order::getCreatedAt)
+                .orderByDesc(Order::getId));
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, List<OrderItem>> itemsByOrderId = orderItemMapper
+                .selectList(new LambdaQueryWrapper<OrderItem>()
+                        .in(OrderItem::getOrderId, orderIds)
+                        .orderByAsc(OrderItem::getId))
+                .stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+        return orders.stream()
+                .map(order -> toVO(order, itemsByOrderId.getOrDefault(order.getId(), List.of())))
+                .toList();
+    }
+
+    @Override
+    public OrderVO getById(Long id) {
+        Order order = findOwnedOrder(id);
+        return toVO(order, findOrderItems(order.getId()));
+    }
+
+    /**
+     * 只有已创建订单允许取消，因为支付、发货或完成后的订单需要退款、物流等额外流程，
+     * 当前阶段没有实现这些能力。条件更新同时校验原状态，避免并发状态变化被错误覆盖。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderVO cancel(Long id) {
+        Order order = findOwnedOrder(id);
+        if (!Integer.valueOf(OrderStatus.ORDER_CREATED.getCode()).equals(order.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已创建订单可以取消");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .eq(Order::getUserId, order.getUserId())
+                .eq(Order::getStatus, OrderStatus.ORDER_CREATED.getCode())
+                .set(Order::getStatus, OrderStatus.ORDER_CANCELLED.getCode())
+                .set(Order::getUpdatedAt, now));
+        if (updated != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "订单状态已发生变化，请刷新后重试");
+        }
+
+        order.setStatus(OrderStatus.ORDER_CANCELLED.getCode());
+        order.setUpdatedAt(now);
+        return toVO(order, findOrderItems(order.getId()));
+    }
+
     private void validateCart(CartVO cart) {
         if (cart.items() == null || cart.items().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "购物车为空");
@@ -92,7 +157,7 @@ public class OrderServiceImpl implements OrderService {
         order.setUserId(currentUserProvider.getCurrentUserId());
         order.setTotalAmount(cart.totalAmount());
         order.setTotalQuantity(cart.totalQuantity());
-        order.setStatus(ORDER_STATUS_CREATED);
+        order.setStatus(OrderStatus.ORDER_CREATED.getCode());
         order.setRemark(StringUtils.hasText(request.remark()) ? request.remark().trim() : null);
         order.setDeleted(0);
         order.setCreatedAt(now);
@@ -101,6 +166,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderItem buildOrderItem(Long orderId, CartItemVO cartItem, LocalDateTime now) {
+        // 下单时保存商品名称、图片和成交价快照，后续商品修改不会改变历史订单。
         OrderItem orderItem = new OrderItem();
         orderItem.setOrderId(orderId);
         orderItem.setProductId(cartItem.productId());
@@ -119,7 +185,32 @@ public class OrderServiceImpl implements OrderService {
         return "AD" + now.format(ORDER_TIME_FORMATTER) + randomPart;
     }
 
+    /**
+     * 查询条件始终同时包含订单 ID 和当前用户 ID。这样既阻止越权读取或修改他人订单，
+     * 也不会通过不同错误响应向调用方泄露其他用户的订单是否存在。
+     */
+    private Order findOwnedOrder(Long orderId) {
+        Long userId = currentUserProvider.getCurrentUserId();
+        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
+                .eq(Order::getId, orderId)
+                .eq(Order::getUserId, userId));
+        if (order == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "订单不存在");
+        }
+        return order;
+    }
+
+    private List<OrderItem> findOrderItems(Long orderId) {
+        return orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .orderByAsc(OrderItem::getId));
+    }
+
     private void clearCartAfterCommit(String orderNo) {
+        /*
+         * Redis 不参与 MySQL 本地事务，因此只在数据库提交成功后清空购物车：
+         * 既避免订单回滚时丢失购物车，也避免已下单商品继续留在购物车造成重复下单。
+         */
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             cartService.clear();
             return;

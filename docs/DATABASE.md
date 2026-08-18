@@ -151,7 +151,7 @@ HSET cart:user:1 1950000000000000201 1
 | `user_id` | `BIGINT` | 否 | 无 | 下单用户 ID |
 | `total_amount` | `DECIMAL(12,2)` | 否 | 无 | 订单总金额 |
 | `total_quantity` | `INT` | 否 | 无 | 商品总数量 |
-| `status` | `TINYINT` | 否 | `0` | 订单状态：`0` 已创建 |
+| `status` | `TINYINT` | 否 | `0` | 订单状态：`0` 已创建、`1` 已支付、`2` 已发货、`3` 已完成、`4` 已取消 |
 | `remark` | `VARCHAR(200)` | 是 | `NULL` | 订单备注 |
 | `deleted` | `TINYINT` | 否 | `0` | 逻辑删除：`0` 未删除，`1` 已删除 |
 | `created_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 创建时间 |
@@ -195,7 +195,10 @@ HSET cart:user:1 1950000000000000201 1
 
 - 订单主表与全部明细必须在同一个 MySQL 本地事务中写入。
 - 商品名称、封面、单价和小计采用下单时快照，后续商品变化不会修改历史订单。
-- 当前只定义“已创建”状态，不包含支付、取消、发货或完成状态流转。
+- Java 代码通过 `OrderStatus` 枚举集中维护状态码，避免在业务逻辑中散落数字常量。
+- 状态定义：`ORDER_CREATED(0)`、`ORDER_PAID(1)`、`ORDER_SHIPPED(2)`、`ORDER_COMPLETED(3)`、`ORDER_CANCELLED(4)`。
+- 当前只实现 `ORDER_CREATED -> ORDER_CANCELLED` 流转；已支付状态仅作模型预留，不代表已经实现支付。
+- 取消订单时必须同时校验当前用户归属和订单当前状态，只有已创建订单允许取消。
 - 当前下单只校验库存，不执行库存扣减或库存预占。
 - `order_id`、`product_id` 和 `user_id` 均为逻辑关联，当前不设置物理外键。
 

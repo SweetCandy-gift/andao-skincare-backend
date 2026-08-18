@@ -1,0 +1,121 @@
+package com.andao.skincare.module.order.service.impl;
+
+import com.andao.skincare.module.cart.service.CartService;
+import com.andao.skincare.module.order.entity.Order;
+import com.andao.skincare.module.order.entity.OrderItem;
+import com.andao.skincare.module.order.entity.OrderStatus;
+import com.andao.skincare.module.order.mapper.OrderItemMapper;
+import com.andao.skincare.module.order.mapper.OrderMapper;
+import com.andao.skincare.module.order.vo.OrderVO;
+import com.andao.skincare.module.user.service.CurrentUserProvider;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class OrderServiceImplTest {
+
+    private final OrderMapper orderMapper = mock(OrderMapper.class);
+    private final OrderItemMapper orderItemMapper = mock(OrderItemMapper.class);
+    private final CartService cartService = mock(CartService.class);
+    private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+    private OrderServiceImpl orderService;
+
+    @BeforeEach
+    void setUp() {
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), "order-test"), Order.class);
+        orderService = new OrderServiceImpl(
+                orderMapper, orderItemMapper, cartService, currentUserProvider);
+        when(currentUserProvider.getCurrentUserId()).thenReturn(1001L);
+    }
+
+    @Test
+    void shouldListCurrentUserOrdersWithItems() {
+        Order order = order(2001L, OrderStatus.ORDER_CREATED);
+        OrderItem item = orderItem(3001L, order.getId());
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(item));
+
+        List<OrderVO> result = orderService.list();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).id()).isEqualTo(order.getId());
+        assertThat(result.get(0).items()).hasSize(1);
+    }
+
+    @Test
+    void shouldHideOrderThatDoesNotBelongToCurrentUser() {
+        when(orderMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> orderService.getById(2001L))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void shouldCancelCreatedOrder() {
+        Order order = order(2001L, OrderStatus.ORDER_CREATED);
+        when(orderMapper.selectOne(any())).thenReturn(order);
+        when(orderMapper.update(isNull(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+
+        OrderVO result = orderService.cancel(order.getId());
+
+        assertThat(result.status()).isEqualTo(OrderStatus.ORDER_CANCELLED.getCode());
+        verify(orderMapper).update(isNull(), any());
+    }
+
+    @Test
+    void shouldRejectCancellationWhenOrderIsNotCreated() {
+        Order order = order(2001L, OrderStatus.ORDER_PAID);
+        when(orderMapper.selectOne(any())).thenReturn(order);
+
+        assertThatThrownBy(() -> orderService.cancel(order.getId()))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        verify(orderMapper, never()).update(isNull(), any());
+    }
+
+    private Order order(Long id, OrderStatus status) {
+        Order order = new Order();
+        order.setId(id);
+        order.setOrderNo("AD202608180001");
+        order.setUserId(1001L);
+        order.setTotalAmount(new BigDecimal("129.00"));
+        order.setTotalQuantity(1);
+        order.setStatus(status.getCode());
+        order.setCreatedAt(LocalDateTime.of(2026, 8, 18, 20, 0));
+        order.setUpdatedAt(order.getCreatedAt());
+        return order;
+    }
+
+    private OrderItem orderItem(Long id, Long orderId) {
+        OrderItem item = new OrderItem();
+        item.setId(id);
+        item.setOrderId(orderId);
+        item.setProductId(4001L);
+        item.setProductName("安稻修护面霜");
+        item.setProductPrice(new BigDecimal("129.00"));
+        item.setQuantity(1);
+        item.setSubtotal(new BigDecimal("129.00"));
+        item.setCreatedAt(LocalDateTime.of(2026, 8, 18, 20, 0));
+        return item;
+    }
+}
