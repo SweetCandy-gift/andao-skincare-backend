@@ -11,4 +11,6 @@ public interface ProductService {
     List<ProductListVO> list(ProductQueryDTO query);
 
     ProductDetailVO getById(Long id);
+
+    void deductStock(Long productId, Integer quantity);
 }

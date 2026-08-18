@@ -1,18 +1,23 @@
 package com.andao.skincare.module.order.service.impl;
 
 import com.andao.skincare.module.cart.service.CartService;
+import com.andao.skincare.module.cart.vo.CartItemVO;
+import com.andao.skincare.module.cart.vo.CartVO;
+import com.andao.skincare.module.order.dto.OrderCreateDTO;
 import com.andao.skincare.module.order.entity.Order;
 import com.andao.skincare.module.order.entity.OrderItem;
 import com.andao.skincare.module.order.entity.OrderStatus;
 import com.andao.skincare.module.order.mapper.OrderItemMapper;
 import com.andao.skincare.module.order.mapper.OrderMapper;
 import com.andao.skincare.module.order.vo.OrderVO;
+import com.andao.skincare.module.product.service.ProductService;
 import com.andao.skincare.module.user.service.CurrentUserProvider;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,6 +31,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +42,7 @@ class OrderServiceImplTest {
     private final OrderMapper orderMapper = mock(OrderMapper.class);
     private final OrderItemMapper orderItemMapper = mock(OrderItemMapper.class);
     private final CartService cartService = mock(CartService.class);
+    private final ProductService productService = mock(ProductService.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private OrderServiceImpl orderService;
 
@@ -42,7 +51,7 @@ class OrderServiceImplTest {
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), "order-test"), Order.class);
         orderService = new OrderServiceImpl(
-                orderMapper, orderItemMapper, cartService, currentUserProvider);
+                orderMapper, orderItemMapper, cartService, productService, currentUserProvider);
         when(currentUserProvider.getCurrentUserId()).thenReturn(1001L);
     }
 
@@ -58,6 +67,39 @@ class OrderServiceImplTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(order.getId());
         assertThat(result.get(0).items()).hasSize(1);
+    }
+
+    @Test
+    void shouldDeductStockBeforeSavingOrder() {
+        CartItemVO item = cartItem();
+        when(cartService.list()).thenReturn(new CartVO(
+                1001L, List.of(item), item.quantity(), item.subtotal()));
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(2001L);
+            return 1;
+        }).when(orderMapper).insert(any(Order.class));
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        orderService.create(new OrderCreateDTO(null));
+
+        InOrder invocationOrder = inOrder(productService, orderMapper);
+        invocationOrder.verify(productService).deductStock(item.productId(), item.quantity());
+        invocationOrder.verify(orderMapper).insert(any(Order.class));
+    }
+
+    @Test
+    void shouldNotSaveOrderWhenStockDeductionFails() {
+        CartItemVO item = cartItem();
+        when(cartService.list()).thenReturn(new CartVO(
+                1001L, List.of(item), item.quantity(), item.subtotal()));
+        doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "库存已变化"))
+                .when(productService).deductStock(item.productId(), item.quantity());
+
+        assertThatThrownBy(() -> orderService.create(new OrderCreateDTO(null)))
+                .isInstanceOf(ResponseStatusException.class);
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderItemMapper, never()).insert(any(OrderItem.class));
     }
 
     @Test
@@ -117,5 +159,11 @@ class OrderServiceImplTest {
         item.setSubtotal(new BigDecimal("129.00"));
         item.setCreatedAt(LocalDateTime.of(2026, 8, 18, 20, 0));
         return item;
+    }
+
+    private CartItemVO cartItem() {
+        return new CartItemVO(
+                4001L, "安稻修护面霜", null, new BigDecimal("129.00"),
+                2, new BigDecimal("258.00"), 10, true);
     }
 }

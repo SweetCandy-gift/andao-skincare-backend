@@ -12,6 +12,7 @@ import com.andao.skincare.module.order.mapper.OrderMapper;
 import com.andao.skincare.module.order.service.OrderService;
 import com.andao.skincare.module.order.vo.OrderItemVO;
 import com.andao.skincare.module.order.vo.OrderVO;
+import com.andao.skincare.module.product.service.ProductService;
 import com.andao.skincare.module.user.service.CurrentUserProvider;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -42,15 +43,18 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final CartService cartService;
+    private final ProductService productService;
     private final CurrentUserProvider currentUserProvider;
 
     public OrderServiceImpl(OrderMapper orderMapper,
                             OrderItemMapper orderItemMapper,
                             CartService cartService,
+                            ProductService productService,
                             CurrentUserProvider currentUserProvider) {
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.cartService = cartService;
+        this.productService = productService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -63,6 +67,9 @@ public class OrderServiceImpl implements OrderService {
     public OrderVO create(OrderCreateDTO request) {
         CartVO cart = cartService.list();
         validateCart(cart);
+
+        // 库存扣减与订单写入共用当前 MySQL 事务，任一步失败都会整体回滚。
+        cart.items().forEach(item -> productService.deductStock(item.productId(), item.quantity()));
 
         LocalDateTime now = LocalDateTime.now();
         Order order = buildOrder(request, cart, now);

@@ -9,8 +9,11 @@ import com.andao.skincare.module.product.service.ProductService;
 import com.andao.skincare.module.product.vo.ProductDetailVO;
 import com.andao.skincare.module.product.vo.ProductListVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -71,6 +74,39 @@ public class ProductServiceImpl implements ProductService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在或已下架");
         }
         return toDetailVO(product, category);
+    }
+
+    /**
+     * 使用数据库条件更新完成库存扣减。stock >= quantity 保证库存不会变为负数，
+     * version 条件保证并发请求只能有一个使用当前版本成功更新，从而防止超卖。
+     * MANDATORY 要求该方法必须加入订单事务，订单保存失败时库存才能一起回滚。
+     */
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void deductStock(Long productId, Integer quantity) {
+        if (quantity == null || quantity <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "扣减库存数量必须为正数");
+        }
+        Product product = productMapper.selectOne(new LambdaQueryWrapper<Product>()
+                .eq(Product::getId, productId)
+                .eq(Product::getStatus, STATUS_ENABLED));
+        if (product == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "商品不存在或已下架");
+        }
+        if (product.getStock() == null || product.getStock() < quantity) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "商品库存不足");
+        }
+
+        int updated = productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                .eq(Product::getId, productId)
+                .eq(Product::getStatus, STATUS_ENABLED)
+                .eq(Product::getVersion, product.getVersion())
+                .ge(Product::getStock, quantity)
+                .setSql("stock = stock - {0}", quantity)
+                .setSql("version = version + 1"));
+        if (updated != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "商品库存已变化，请重新确认后下单");
+        }
     }
 
     private Map<Long, Category> getEnabledCategoryMap() {

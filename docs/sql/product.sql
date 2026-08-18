@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `product` (
     `cover_url` VARCHAR(500) DEFAULT NULL COMMENT '商品封面地址',
     `price` DECIMAL(10, 2) NOT NULL COMMENT '销售价格',
     `stock` INT NOT NULL DEFAULT 0 COMMENT '库存数量',
+    `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号，每次库存更新后递增',
     `sales` INT NOT NULL DEFAULT 0 COMMENT '销量',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-下架，1-上架',
     `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除，1-已删除',
@@ -28,3 +29,6 @@ CREATE TABLE IF NOT EXISTS `product` (
     KEY `idx_product_category_status` (`category_id`, `status`),
     KEY `idx_product_status_created` (`status`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品表';
+
+-- 已使用早期脚本创建 product 表的数据库，需要单独执行一次以下迁移：
+-- ALTER TABLE `product` ADD COLUMN `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号，每次库存更新后递增' AFTER `stock`;

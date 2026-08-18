@@ -80,6 +80,7 @@
 | `cover_url` | `VARCHAR(500)` | 是 | `NULL` | 商品封面地址 |
 | `price` | `DECIMAL(10,2)` | 否 | 无 | 销售价格 |
 | `stock` | `INT` | 否 | `0` | 库存数量 |
+| `version` | `INT` | 否 | `0` | 乐观锁版本号，每次库存更新成功后递增 |
 | `sales` | `INT` | 否 | `0` | 销量 |
 | `status` | `TINYINT` | 否 | `1` | 状态：`0` 下架，`1` 上架 |
 | `deleted` | `TINYINT` | 否 | `0` | 逻辑删除：`0` 未删除，`1` 已删除 |
@@ -98,6 +99,9 @@
 
 - 商品金额使用 `DECIMAL(10,2)`，不得使用浮点类型保存。
 - 当前查询只返回未逻辑删除、已上架且所属分类已启用的商品。
+- 下单扣减库存采用带 `stock >= quantity` 和当前 `version` 的数据库条件更新，更新成功时库存递减且版本号递增。
+- 库存条件更新影响行数不是 `1` 时视为库存不足或并发版本冲突，不能继续创建订单。
+- 早期已初始化的数据库需要执行 `product.sql` 末尾注释中的 `ALTER TABLE`，为现有 `product` 表增加 `version` 字段。
 - `category_id` 表示逻辑关联，当前不设置物理外键；写入商品数据时必须保证分类存在。
 
 目前共有 `sys_user`、`product_category`、`product` 三张业务表。
@@ -199,7 +203,8 @@ HSET cart:user:1 1950000000000000201 1
 - 状态定义：`ORDER_CREATED(0)`、`ORDER_PAID(1)`、`ORDER_SHIPPED(2)`、`ORDER_COMPLETED(3)`、`ORDER_CANCELLED(4)`。
 - 当前只实现 `ORDER_CREATED -> ORDER_CANCELLED` 流转；已支付状态仅作模型预留，不代表已经实现支付。
 - 取消订单时必须同时校验当前用户归属和订单当前状态，只有已创建订单允许取消。
-- 当前下单只校验库存，不执行库存扣减或库存预占。
+- 下单时的全部库存扣减、订单主表和订单明细写入位于同一个 MySQL 本地事务；任一步失败都会整体回滚。
+- 当前不实现库存预占；取消订单也暂不恢复库存。
 - `order_id`、`product_id` 和 `user_id` 均为逻辑关联，当前不设置物理外键。
 
 目前共有 `sys_user`、`product_category`、`product`、`order`、`order_item` 五张业务表。
