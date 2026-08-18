@@ -1,5 +1,6 @@
 package com.andao.skincare.module.order.controller;
 
+import com.andao.skincare.common.result.Result;
 import com.andao.skincare.module.order.dto.OrderCreateDTO;
 import com.andao.skincare.module.order.service.OrderService;
 import com.andao.skincare.module.order.vo.OrderVO;
@@ -31,22 +32,24 @@ public class OrderController {
 
     @PostMapping("/create")
     @ResponseStatus(HttpStatus.CREATED)
-    public OrderVO create(@Valid @RequestBody OrderCreateDTO request) {
-        return orderService.create(request);
+    public Result<OrderVO> create(@Valid @RequestBody OrderCreateDTO request) {
+        return Result.success(orderService.create(request));
     }
 
     @GetMapping("/list")
-    public List<OrderVO> list() {
-        return orderService.list();
+    public Result<List<OrderVO>> list() {
+        return Result.success(orderService.list());
     }
 
     @GetMapping("/{id}")
-    public OrderVO getById(@PathVariable @Positive(message = "订单ID必须为正数") Long id) {
-        return orderService.getById(id);
+    public Result<OrderVO> getById(
+            @PathVariable @Positive(message = "订单ID必须为正数") Long id) {
+        return Result.success(orderService.getById(id));
     }
 
     @PutMapping("/{id}/cancel")
-    public OrderVO cancel(@PathVariable @Positive(message = "订单ID必须为正数") Long id) {
-        return orderService.cancel(id);
+    public Result<OrderVO> cancel(
+            @PathVariable @Positive(message = "订单ID必须为正数") Long id) {
+        return Result.success(orderService.cancel(id));
     }
 }

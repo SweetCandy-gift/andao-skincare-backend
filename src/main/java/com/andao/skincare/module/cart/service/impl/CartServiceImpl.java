@@ -1,5 +1,7 @@
 package com.andao.skincare.module.cart.service.impl;
 
+import com.andao.skincare.common.exception.BusinessException;
+import com.andao.skincare.common.exception.ErrorCode;
 import com.andao.skincare.module.cart.dto.CartAddDTO;
 import com.andao.skincare.module.cart.dto.CartUpdateDTO;
 import com.andao.skincare.module.cart.entity.CartItem;
@@ -10,9 +12,7 @@ import com.andao.skincare.module.product.service.ProductService;
 import com.andao.skincare.module.product.vo.ProductDetailVO;
 import com.andao.skincare.module.user.service.CurrentUserProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -20,6 +20,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Redis 购物车采用 Hash：key 为 cart:user:{userId}，field 为商品 ID，value 为数量。
+ * 同一用户的购物车集中在一个 Redis Key 下，同时单个商品可按 field 进行 O(1) 增删改，
+ * 比把整个购物车序列化成一个字符串更适合频繁修改商品数量。
+ */
 @Service
 public class CartServiceImpl implements CartService {
 
@@ -57,6 +62,7 @@ public class CartServiceImpl implements CartService {
         Map<Object, Object> entries = redisTemplate.opsForHash().entries(cartKey(userId));
         List<CartItemVO> items = new ArrayList<>();
 
+        // Redis 只保存商品 ID 和数量，展示时读取最新商品信息，避免缓存价格成为下单依据。
         for (Map.Entry<Object, Object> entry : entries.entrySet()) {
             Long productId = parseProductId(entry.getKey());
             int quantity = parseQuantity(entry.getValue());
@@ -83,7 +89,7 @@ public class CartServiceImpl implements CartService {
         String key = currentCartKey();
         String field = request.productId().toString();
         if (!Boolean.TRUE.equals(redisTemplate.opsForHash().hasKey(key, field))) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "购物车中不存在该商品");
+            throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
         }
 
         ProductDetailVO product = productService.getById(request.productId());
@@ -105,8 +111,8 @@ public class CartServiceImpl implements CartService {
     private CartItemVO toCartItemVO(CartItem item) {
         try {
             return toAvailableVO(item, productService.getById(item.productId()));
-        } catch (ResponseStatusException exception) {
-            if (exception.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() != ErrorCode.PRODUCT_NOT_FOUND) {
                 throw exception;
             }
             return new CartItemVO(
@@ -125,10 +131,10 @@ public class CartServiceImpl implements CartService {
 
     private void validateQuantity(ProductDetailVO product, int quantity) {
         if (quantity > MAX_QUANTITY) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "单个商品数量不能超过999");
+            throw new BusinessException(ErrorCode.CART_QUANTITY_LIMIT);
         }
         if (product.stock() == null || product.stock() < quantity) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "商品库存不足");
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT);
         }
     }
 

@@ -1,5 +1,7 @@
 package com.andao.skincare.module.product.service.impl;
 
+import com.andao.skincare.common.exception.BusinessException;
+import com.andao.skincare.common.exception.ErrorCode;
 import com.andao.skincare.module.product.entity.Product;
 import com.andao.skincare.module.product.mapper.CategoryMapper;
 import com.andao.skincare.module.product.mapper.ProductMapper;
@@ -10,8 +12,6 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -61,8 +61,8 @@ class ProductServiceImplTest {
         when(productMapper.selectOne(any())).thenReturn(product);
 
         assertThatThrownBy(() -> productService.deductStock(product.getId(), 2))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.STOCK_INSUFFICIENT));
         verify(productMapper, never()).update(isNull(), any());
     }
 
@@ -73,8 +73,8 @@ class ProductServiceImplTest {
         when(productMapper.update(isNull(), any())).thenReturn(0);
 
         assertThatThrownBy(() -> productService.deductStock(product.getId(), 2))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.STOCK_CONFLICT));
     }
 
     private Product product(int stock, int version) {

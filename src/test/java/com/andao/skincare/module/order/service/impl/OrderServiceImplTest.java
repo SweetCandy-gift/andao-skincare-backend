@@ -1,5 +1,7 @@
 package com.andao.skincare.module.order.service.impl;
 
+import com.andao.skincare.common.exception.BusinessException;
+import com.andao.skincare.common.exception.ErrorCode;
 import com.andao.skincare.module.cart.service.CartService;
 import com.andao.skincare.module.cart.vo.CartItemVO;
 import com.andao.skincare.module.cart.vo.CartVO;
@@ -18,8 +20,6 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -93,11 +93,12 @@ class OrderServiceImplTest {
         CartItemVO item = cartItem();
         when(cartService.list()).thenReturn(new CartVO(
                 1001L, List.of(item), item.quantity(), item.subtotal()));
-        doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "库存已变化"))
+        doThrow(new BusinessException(ErrorCode.STOCK_CONFLICT))
                 .when(productService).deductStock(item.productId(), item.quantity());
 
         assertThatThrownBy(() -> orderService.create(new OrderCreateDTO(null)))
-                .isInstanceOf(ResponseStatusException.class);
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.STOCK_CONFLICT));
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderItemMapper, never()).insert(any(OrderItem.class));
     }
@@ -107,8 +108,8 @@ class OrderServiceImplTest {
         when(orderMapper.selectOne(any())).thenReturn(null);
 
         assertThatThrownBy(() -> orderService.getById(2001L))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_FOUND));
     }
 
     @Test
@@ -130,8 +131,8 @@ class OrderServiceImplTest {
         when(orderMapper.selectOne(any())).thenReturn(order);
 
         assertThatThrownBy(() -> orderService.cancel(order.getId()))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ORDER_CANNOT_CANCEL));
         verify(orderMapper, never()).update(isNull(), any());
     }
 

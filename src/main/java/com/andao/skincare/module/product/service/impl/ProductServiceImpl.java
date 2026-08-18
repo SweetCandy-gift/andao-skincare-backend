@@ -1,5 +1,7 @@
 package com.andao.skincare.module.product.service.impl;
 
+import com.andao.skincare.common.exception.BusinessException;
+import com.andao.skincare.common.exception.ErrorCode;
 import com.andao.skincare.module.product.dto.ProductQueryDTO;
 import com.andao.skincare.module.product.entity.Category;
 import com.andao.skincare.module.product.entity.Product;
@@ -10,12 +12,10 @@ import com.andao.skincare.module.product.vo.ProductDetailVO;
 import com.andao.skincare.module.product.vo.ProductListVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Collections;
 import java.util.List;
@@ -64,14 +64,14 @@ public class ProductServiceImpl implements ProductService {
                 .eq(Product::getId, id)
                 .eq(Product::getStatus, STATUS_ENABLED));
         if (product == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在或已下架");
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
         }
 
         Category category = categoryMapper.selectOne(new LambdaQueryWrapper<Category>()
                 .eq(Category::getId, product.getCategoryId())
                 .eq(Category::getStatus, STATUS_ENABLED));
         if (category == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在或已下架");
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
         }
         return toDetailVO(product, category);
     }
@@ -85,16 +85,16 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void deductStock(Long productId, Integer quantity) {
         if (quantity == null || quantity <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "扣减库存数量必须为正数");
+            throw new BusinessException(ErrorCode.STOCK_QUANTITY_INVALID);
         }
         Product product = productMapper.selectOne(new LambdaQueryWrapper<Product>()
                 .eq(Product::getId, productId)
                 .eq(Product::getStatus, STATUS_ENABLED));
         if (product == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "商品不存在或已下架");
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
         if (product.getStock() == null || product.getStock() < quantity) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "商品库存不足");
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT);
         }
 
         int updated = productMapper.update(null, new LambdaUpdateWrapper<Product>()
@@ -105,7 +105,7 @@ public class ProductServiceImpl implements ProductService {
                 .setSql("stock = stock - {0}", quantity)
                 .setSql("version = version + 1"));
         if (updated != 1) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "商品库存已变化，请重新确认后下单");
+            throw new BusinessException(ErrorCode.STOCK_CONFLICT);
         }
     }
 

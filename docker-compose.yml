@@ -1,0 +1,68 @@
+# Docker Compose gives development and deployment the same reproducible
+# application, database, and cache environment with one command.
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-andao_skincare}
+      MYSQL_USER: ${MYSQL_USERNAME:-skincare}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-andao_skincare}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-andao_skincare_root}
+    ports:
+      - "${MYSQL_PORT_FORWARD:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docs/sql/user.sql:/docker-entrypoint-initdb.d/01-user.sql:ro
+      - ./docs/sql/product.sql:/docker-entrypoint-initdb.d/02-product.sql:ro
+      - ./docs/sql/order.sql:/docker-entrypoint-initdb.d/03-order.sql:ro
+      - ./docs/sql/ai.sql:/docker-entrypoint-initdb.d/04-ai.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No custom command is supplied: Redis starts with the image's default configuration.
+    ports:
+      - "${REDIS_PORT_FORWARD:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # The prod profile keeps deployment endpoints separate from local dev defaults.
+      SPRING_PROFILES_ACTIVE: prod
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-andao_skincare}
+      MYSQL_USERNAME: ${MYSQL_USERNAME:-skincare}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-andao_skincare}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Default is Base64 for a 32-byte development key; override it outside local demos.
+      JWT_SECRET: ${JWT_SECRET:-YW5kYW8tc2tpbmNhcmUtZG9ja2VyLWp3dC1zZWNyZXQ=}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:

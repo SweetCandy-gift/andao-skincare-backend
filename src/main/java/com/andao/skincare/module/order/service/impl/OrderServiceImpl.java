@@ -1,5 +1,7 @@
 package com.andao.skincare.module.order.service.impl;
 
+import com.andao.skincare.common.exception.BusinessException;
+import com.andao.skincare.common.exception.ErrorCode;
 import com.andao.skincare.module.cart.service.CartService;
 import com.andao.skincare.module.cart.vo.CartItemVO;
 import com.andao.skincare.module.cart.vo.CartVO;
@@ -18,13 +20,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -128,7 +128,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderVO cancel(Long id) {
         Order order = findOwnedOrder(id);
         if (!Integer.valueOf(OrderStatus.ORDER_CREATED.getCode()).equals(order.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已创建订单可以取消");
+            throw new BusinessException(ErrorCode.ORDER_CANNOT_CANCEL);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -139,7 +139,7 @@ public class OrderServiceImpl implements OrderService {
                 .set(Order::getStatus, OrderStatus.ORDER_CANCELLED.getCode())
                 .set(Order::getUpdatedAt, now));
         if (updated != 1) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "订单状态已发生变化，请刷新后重试");
+            throw new BusinessException(ErrorCode.ORDER_STATUS_CHANGED);
         }
 
         order.setStatus(OrderStatus.ORDER_CANCELLED.getCode());
@@ -149,12 +149,12 @@ public class OrderServiceImpl implements OrderService {
 
     private void validateCart(CartVO cart) {
         if (cart.items() == null || cart.items().isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "购物车为空");
+            throw new BusinessException(ErrorCode.CART_EMPTY);
         }
         boolean hasUnavailableItem = cart.items().stream()
                 .anyMatch(item -> !Boolean.TRUE.equals(item.available()));
         if (hasUnavailableItem) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "购物车包含不可用或库存不足的商品");
+            throw new BusinessException(ErrorCode.CART_PRODUCT_UNAVAILABLE);
         }
     }
 
@@ -202,7 +202,7 @@ public class OrderServiceImpl implements OrderService {
                 .eq(Order::getId, orderId)
                 .eq(Order::getUserId, userId));
         if (order == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "订单不存在");
+            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
         }
         return order;
     }

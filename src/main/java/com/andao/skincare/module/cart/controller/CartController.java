@@ -1,5 +1,6 @@
 package com.andao.skincare.module.cart.controller;
 
+import com.andao.skincare.common.result.Result;
 import com.andao.skincare.module.cart.dto.CartAddDTO;
 import com.andao.skincare.module.cart.dto.CartUpdateDTO;
 import com.andao.skincare.module.cart.service.CartService;
@@ -7,7 +8,6 @@ import com.andao.skincare.module.cart.vo.CartItemVO;
 import com.andao.skincare.module.cart.vo.CartVO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
-import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -31,23 +30,24 @@ public class CartController {
     }
 
     @PostMapping("/add")
-    public CartItemVO add(@Valid @RequestBody CartAddDTO request) {
-        return cartService.add(request);
+    public Result<CartItemVO> add(@Valid @RequestBody CartAddDTO request) {
+        return Result.success(cartService.add(request));
     }
 
     @GetMapping("/list")
-    public CartVO list() {
-        return cartService.list();
+    public Result<CartVO> list() {
+        return Result.success(cartService.list());
     }
 
     @PutMapping("/update")
-    public CartItemVO update(@Valid @RequestBody CartUpdateDTO request) {
-        return cartService.update(request);
+    public Result<CartItemVO> update(@Valid @RequestBody CartUpdateDTO request) {
+        return Result.success(cartService.update(request));
     }
 
     @DeleteMapping("/{productId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void remove(@PathVariable @Positive(message = "商品ID必须为正数") Long productId) {
+    public Result<Void> remove(
+            @PathVariable @Positive(message = "商品ID必须为正数") Long productId) {
         cartService.remove(productId);
+        return Result.success();
     }
 }

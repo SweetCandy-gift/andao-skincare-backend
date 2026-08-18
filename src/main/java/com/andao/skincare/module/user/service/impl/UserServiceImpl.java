@@ -1,5 +1,7 @@
 package com.andao.skincare.module.user.service.impl;
 
+import com.andao.skincare.common.exception.BusinessException;
+import com.andao.skincare.common.exception.ErrorCode;
 import com.andao.skincare.module.user.dto.UserLoginDTO;
 import com.andao.skincare.module.user.dto.UserRegisterDTO;
 import com.andao.skincare.module.user.entity.User;
@@ -8,11 +10,9 @@ import com.andao.skincare.module.user.service.UserService;
 import com.andao.skincare.module.user.vo.UserVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 
@@ -34,7 +34,7 @@ public class UserServiceImpl implements UserService {
     public UserVO register(UserRegisterDTO request) {
         String username = request.username().trim();
         if (findByUsername(username) != null) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在");
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
         }
 
         User user = new User();
@@ -50,7 +50,7 @@ public class UserServiceImpl implements UserService {
         try {
             userMapper.insert(user);
         } catch (DuplicateKeyException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在", exception);
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS, exception);
         }
         return toVO(user);
     }
@@ -58,13 +58,25 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserVO login(UserLoginDTO request) {
         User user = findByUsername(request.username().trim());
+        // 密码只与 BCrypt 哈希比较；统一错误信息可避免暴露用户名是否存在。
         if (user == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码错误");
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
         if (!Integer.valueOf(USER_STATUS_ENABLED).equals(user.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "用户已被禁用");
+            throw new BusinessException(ErrorCode.USER_DISABLED);
         }
         return toVO(user);
+    }
+
+    @Override
+    public boolean isActiveUser(Long userId, String username) {
+        if (userId == null || username == null) {
+            return false;
+        }
+        return userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getId, userId)
+                .eq(User::getUsername, username)
+                .eq(User::getStatus, USER_STATUS_ENABLED)) > 0;
     }
 
     private User findByUsername(String username) {

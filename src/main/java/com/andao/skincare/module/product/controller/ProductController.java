@@ -1,5 +1,6 @@
 package com.andao.skincare.module.product.controller;
 
+import com.andao.skincare.common.result.Result;
 import com.andao.skincare.module.product.dto.ProductQueryDTO;
 import com.andao.skincare.module.product.service.ProductService;
 import com.andao.skincare.module.product.vo.ProductDetailVO;
@@ -26,12 +27,13 @@ public class ProductController {
     }
 
     @GetMapping("/list")
-    public List<ProductListVO> list(@Valid ProductQueryDTO query) {
-        return productService.list(query);
+    public Result<List<ProductListVO>> list(@Valid ProductQueryDTO query) {
+        return Result.success(productService.list(query));
     }
 
     @GetMapping("/{id}")
-    public ProductDetailVO getById(@PathVariable @Positive(message = "商品ID必须为正数") Long id) {
-        return productService.getById(id);
+    public Result<ProductDetailVO> getById(
+            @PathVariable @Positive(message = "商品ID必须为正数") Long id) {
+        return Result.success(productService.getById(id));
     }
 }

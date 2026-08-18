@@ -8,8 +8,10 @@ server:
   port: ${SERVER_PORT:8080}
 
 app:
-  auth:
-    test-user-id: ${TEST_USER_ID:1}
+  jwt:
+    issuer: andao-skincare-backend
+    expiration: ${JWT_EXPIRATION:2h}
+    secret: ${JWT_SECRET}
 
 springdoc:
   api-docs:

@@ -104,7 +104,30 @@
 - 早期已初始化的数据库需要执行 `product.sql` 末尾注释中的 `ALTER TABLE`，为现有 `product` 表增加 `version` 字段。
 - `category_id` 表示逻辑关联，当前不设置物理外键；写入商品数据时必须保证分类存在。
 
-目前共有 `sys_user`、`product_category`、`product` 三张业务表。
+以上为用户与商品域的三张业务表。
+
+## ai_analysis_record
+
+用途：保存登录用户每次 AI 护肤分析的输入和分析结果，支持用户回顾历史肤质问题与建议。
+
+对应脚本：`docs/sql/ai.sql`。
+
+| 字段 | 类型 | 允许为空 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `BIGINT` | 否 | 无 | 分析记录 ID，由 MyBatis-Plus 生成雪花 ID |
+| `user_id` | `BIGINT` | 否 | 无 | 所属用户 ID，取自当前 JWT 身份 |
+| `skin_type` | `VARCHAR(30)` | 否 | 无 | 分析时填写的肤质 |
+| `age` | `INT` | 否 | 无 | 分析时填写的年龄 |
+| `problem` | `VARCHAR(500)` | 否 | 无 | 分析时填写的皮肤问题 |
+| `analysis_result` | `TEXT` | 否 | 无 | AI Client 返回的分析文本 |
+| `create_time` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 分析时间 |
+
+### 索引与数据规则
+
+- 主键 `id` 唯一标识分析记录。
+- 联合索引 `idx_ai_analysis_record_user_time(user_id, create_time)` 支持按用户查询时间倒序历史。
+- `user_id` 由服务端从 `SecurityContext` 获取，不接受客户端传入，避免越权写入其他用户的历史。
+- 当前仅保存分析文本，不复制推荐商品数据；商品价格、库存等信息继续由商品模块实时提供。
 
 ## Redis：购物车
 
@@ -116,7 +139,7 @@
 cart:user:{userId}
 ```
 
-示例：固定测试用户 ID 为 `1` 时，Key 为 `cart:user:1`。
+示例：JWT 登录用户 ID 为 `1950000000000000001` 时，Key 为 `cart:user:1950000000000000001`。
 
 ### Hash 结构
 
@@ -207,4 +230,4 @@ HSET cart:user:1 1950000000000000201 1
 - 当前不实现库存预占；取消订单也暂不恢复库存。
 - `order_id`、`product_id` 和 `user_id` 均为逻辑关联，当前不设置物理外键。
 
-目前共有 `sys_user`、`product_category`、`product`、`order`、`order_item` 五张业务表。
+目前共有 `sys_user`、`product_category`、`product`、`order`、`order_item`、`ai_analysis_record` 六张业务表。

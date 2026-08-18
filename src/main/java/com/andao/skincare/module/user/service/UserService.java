@@ -9,4 +9,6 @@ public interface UserService {
     UserVO register(UserRegisterDTO request);
 
     UserVO login(UserLoginDTO request);
+
+    boolean isActiveUser(Long userId, String username);
 }

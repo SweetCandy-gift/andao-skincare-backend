@@ -125,7 +125,18 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS andao_skincare DEFAULT CHARAC
 mysql -u root -p andao_skincare -e "source docs/sql/user.sql"
 mysql -u root -p andao_skincare -e "source docs/sql/product.sql"
 mysql -u root -p andao_skincare -e "source docs/sql/order.sql"
+mysql -u root -p andao_skincare -e "source docs/sql/ai.sql"
 ```
+
+如果数据库是在第八阶段之前初始化的，`CREATE TABLE IF NOT EXISTS` 不会给已有商品表自动补列，需要额外执行一次库存版本字段迁移：
+
+```sql
+ALTER TABLE `product`
+    ADD COLUMN `version` INT NOT NULL DEFAULT 0
+    COMMENT '乐观锁版本号，每次库存更新后递增' AFTER `stock`;
+```
+
+新建数据库直接执行最新 `product.sql` 即可，不要重复执行上述 `ALTER TABLE`。
 
 脚本作用：
 
@@ -134,6 +145,7 @@ mysql -u root -p andao_skincare -e "source docs/sql/order.sql"
 | `docs/sql/user.sql` | `sys_user` |
 | `docs/sql/product.sql` | `product_category`、`product` |
 | `docs/sql/order.sql` | `order`、`order_item` |
+| `docs/sql/ai.sql` | `ai_analysis_record` |
 
 SQL 脚本只创建结构，不包含测试分类和商品数据。调用商品、购物车或订单接口前，需要自行准备启用状态的分类和上架商品。
 
@@ -143,17 +155,34 @@ SQL 脚本只创建结构，不包含测试分类和商品数据。调用商品�
 mysql -u root -p andao_skincare -e "SHOW TABLES;"
 ```
 
-## 5. 固定测试用户
+## 5. JWT 认证配置
 
-项目当前没有 Spring Security、JWT 或 Session。购物车和订单通过固定用户 ID 模拟当前登录用户，默认值为 `1`。
+项目使用 Spring Security + JWT，除注册、登录和 Swagger 文档外，其他业务接口都需要 Bearer Token。购物车和订单用户 ID 从 JWT 对应的 `SecurityContext` 获取，不再使用固定测试用户。
 
-如果希望使用注册接口返回的真实用户 ID，应在启动项目前设置：
+JWT 配置：
+
+| 环境变量 | 是否必填 | 开发环境默认值 | 用途 |
+| --- | --- | --- | --- |
+| `JWT_SECRET` | 所有环境必填 | 无 | Base64 格式的 HMAC 签名密钥，解码后至少 32 字节 |
+| `JWT_EXPIRATION` | 否 | `2h` | Token 有效期 |
+
+项目不提供固定默认密钥。开发和生产环境都必须在启动前通过环境变量提供密钥，避免使用已提交到代码仓库的可预测密钥。开发环境可在当前 PowerShell 会话中生成临时随机密钥：
 
 ```powershell
-$env:TEST_USER_ID = "注册接口返回的用户ID"
+$jwtBytes = New-Object byte[] 32
+$jwtRandom = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$jwtRandom.GetBytes($jwtBytes)
+$env:JWT_SECRET = [Convert]::ToBase64String($jwtBytes)
+$env:JWT_EXPIRATION = "2h"
 ```
 
-该环境变量只在当前 PowerShell 会话中生效，修改后需要重启应用。
+上述变量只在当前终端会话及其子进程中有效，关闭终端后需要重新生成或重新设置。生产环境应由部署平台的 Secret 管理能力注入独立密钥，不要将真实密钥写入配置文件或提交到 Git。
+
+登录成功后，在受保护接口的请求头中携带：
+
+```http
+Authorization: Bearer <登录接口返回的token>
+```
 
 ## 6. 项目启动
 
@@ -192,7 +221,8 @@ mvn spring-boot:run
 | `REDIS_DATABASE` | 否 | `0` | Redis 数据库编号 |
 | `REDIS_TIMEOUT` | 否 | `3s` | Redis 连接超时 |
 | `SERVER_PORT` | 否 | `8080` | HTTP 服务端口 |
-| `TEST_USER_ID` | 否 | `1` | 购物车和订单使用的测试用户 ID |
+| `JWT_SECRET` | 是 | 无 | JWT Base64 签名密钥，解码后至少 32 字节 |
+| `JWT_EXPIRATION` | 否 | `2h` | JWT 有效期 |
 
 PowerShell 完整示例：
 
@@ -206,7 +236,8 @@ $env:REDIS_PASSWORD = ""
 $env:REDIS_DATABASE = "0"
 $env:REDIS_TIMEOUT = "3s"
 $env:SERVER_PORT = "8080"
-$env:TEST_USER_ID = "1"
+$env:JWT_SECRET = "你的Base64格式JWT密钥"
+$env:JWT_EXPIRATION = "2h"
 mvn spring-boot:run
 ```
 
@@ -227,7 +258,7 @@ $env:SERVER_PORT = "8081"
 mvn spring-boot:run
 ```
 
-生产环境使用 `prod` Profile 时，`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `REDIS_HOST` 必须显式提供。
+所有环境启动前都必须设置 `JWT_SECRET`。生产环境使用 `prod` Profile 时，可通过 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DATABASE`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`REDIS_HOST` 和 `REDIS_PORT` 分项配置连接；也可使用 `MYSQL_URL` 完整覆盖 JDBC 地址。Docker Compose 会自动注入这些连接变量。
 
 ## 7. Swagger 地址
 
@@ -285,7 +316,7 @@ Test-NetConnection localhost -Port 3306
 
 原因：数据库或 SQL 脚本尚未初始化。
 
-处理：按照“数据库初始化”章节创建数据库，并执行 `user.sql`、`product.sql`、`order.sql`。
+处理：按照“数据库初始化”章节创建数据库，并执行 `user.sql`、`product.sql`、`order.sql`、`ai.sql`。
 
 ### `Unable to connect to Redis`、`Connection refused` 或 `RedisConnectionFailureException`
 
@@ -315,6 +346,12 @@ Test-NetConnection localhost -Port 6379
 $env:SERVER_PORT = "8081"
 ```
 
+### `Could not resolve placeholder 'JWT_SECRET'`
+
+原因：项目不再提供固定 JWT 默认密钥，当前进程没有设置 `JWT_SECRET`。
+
+处理：按照“JWT 认证配置”章节生成 Base64 随机密钥，并确保设置环境变量和启动应用使用的是同一个终端或 IDE 运行配置。
+
 ### 商品列表为空或无法创建订单
 
 原因可能包括：
@@ -327,11 +364,11 @@ $env:SERVER_PORT = "8081"
 
 先确认数据库中存在启用分类、上架商品，并确认 Redis 可连接。
 
-### 购物车使用了错误的用户 ID
+### 受保护接口返回 `401 Unauthorized`
 
-原因：固定测试用户默认为 `1`，与注册接口生成的雪花 ID 不一致。
+原因可能包括 Token 缺失、没有使用 `Bearer ` 前缀、Token 已过期、签名无效，或应用重启时更换了 `JWT_SECRET`。
 
-处理：把 `TEST_USER_ID` 设置为注册接口返回的用户 ID，然后重启应用。
+处理：重新调用 `/user/login` 获取 Token，并按 `Authorization: Bearer <token>` 格式发送；确认签发和校验 Token 的实例使用相同 `JWT_SECRET`。
 
 ### Swagger 页面无法访问
 
